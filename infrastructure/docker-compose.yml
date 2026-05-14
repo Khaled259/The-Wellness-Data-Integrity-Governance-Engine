@@ -1,0 +1,70 @@
+# =============================================================================
+# Wellness Data Integrity Engine — Local Database Stack
+# -----------------------------------------------------------------------------
+# Spins up PostgreSQL (Redshift analogue) and MongoDB locally so any team
+# member can clone the repo and have an identical environment in one command:
+#
+#     docker compose up -d
+#
+# =============================================================================
+version: "3.9"
+
+services:
+  # ----- PostgreSQL: simulates Amazon Redshift / clinical warehouse ----------
+  postgres:
+    image: postgres:16-alpine
+    container_name: wellness_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: wellness_admin
+      POSTGRES_PASSWORD: change_me_in_prod
+      POSTGRES_DB: wellness_clinical
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wellness_admin -d wellness_clinical"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ----- MongoDB: stores semi-structured wearable telemetry -----------------
+  mongo:
+    image: mongo:7
+    container_name: wellness_mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: wellness_admin
+      MONGO_INITDB_ROOT_PASSWORD: change_me_in_prod
+      MONGO_INITDB_DATABASE: wellness_telemetry
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+      - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ----- Mongo Express: optional web UI for inspecting the NoSQL store -------
+  mongo-express:
+    image: mongo-express:latest
+    container_name: wellness_mongo_ui
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: wellness_admin
+      ME_CONFIG_MONGODB_ADMINPASSWORD: change_me_in_prod
+      ME_CONFIG_MONGODB_URL: mongodb://wellness_admin:change_me_in_prod@mongo:27017/
+      ME_CONFIG_BASICAUTH: "false"
+    depends_on:
+      - mongo
+
+volumes:
+  postgres_data:
+  mongo_data:
